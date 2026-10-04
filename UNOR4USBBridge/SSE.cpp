@@ -21,8 +21,18 @@
 #include "mbedtls/asn1.h"
 #include "mbedtls/asn1write.h"
 #include "mbedtls/sha256.h"
+#include "mbedtls/version.h"
 
 #include "SSE.h"
+
+/* mbedTLS 3.x added the RNG/size parameters to pk_parse_key()/pk_sign() and
+ * renamed mbedtls_sha256_ret() to mbedtls_sha256().  Select the matching
+ * call so the sketch still builds against mbedTLS 2.x (ESP32-S3). */
+#if defined(MBEDTLS_VERSION_MAJOR) && MBEDTLS_VERSION_MAJOR >= 3
+#define UNOR4_MBEDTLS_V3 1
+#else
+#define UNOR4_MBEDTLS_V3 0
+#endif
 
 /******************************************************************************
    LOCAL MODULE FUNCTIONS
@@ -190,7 +200,11 @@ int Arduino_UNOWIFIR4_SSE::exportECKeyXY(const unsigned char* derKey, int derLen
   mbedtls_pk_init(&key);
 
   /* Check if we can use parse public key */
+#if UNOR4_MBEDTLS_V3
+  if ((ret = mbedtls_pk_parse_key(&key, derKey, derLen, NULL, 0, NULL, NULL)) != 0) {
+#else
   if ((ret = mbedtls_pk_parse_key(&key, derKey, derLen, NULL, 0)) != 0) {
+#endif
     DEBUG_ERROR(" failed\n  !  mbedtls_pk_parse_key returned -0x%04x", (unsigned int) -ret);
     goto exit;
   }
@@ -280,8 +294,13 @@ int Arduino_UNOWIFIR4_SSE::sha256(const unsigned char* message, int len, unsigne
 {
   int ret = 1;
 
+#if UNOR4_MBEDTLS_V3
+  if((ret = mbedtls_sha256(message, len, sha256, 0)) != 0) {
+    DEBUG_ERROR(" failed\n  ! mbedtls_sha256 returned -0x%04x\n", (unsigned int) -ret);
+#else
   if((ret = mbedtls_sha256_ret(message, len, sha256, 0)) != 0) {
     DEBUG_ERROR(" failed\n  ! mbedtls_sha256_ret returned -0x%04x\n", (unsigned int) -ret);
+#endif
     return ret;
   }
   return SSE_SHA256_LENGTH;
@@ -308,12 +327,22 @@ int Arduino_UNOWIFIR4_SSE::sign(const unsigned char* derKey, int derLen, const u
   }
 
   /* verify if work using only private key*/
+#if UNOR4_MBEDTLS_V3
+  if ((ret = mbedtls_pk_parse_key(&key, derKey, derLen, NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg)) != 0) {
+#else
   if ((ret = mbedtls_pk_parse_key(&key, derKey, derLen, NULL, 0)) != 0) {
+#endif
     DEBUG_ERROR(" failed\n  !  mbedtls_pk_parse_key returned -0x%04x", (unsigned int) -ret);
     goto exit;
   }
 
+#if UNOR4_MBEDTLS_V3
+  if ((ret = mbedtls_pk_sign(&key, MBEDTLS_MD_SHA256, sha256, 0, mbedtls_buf,
+                             sizeof(mbedtls_buf), &sig_size,
+                             mbedtls_ctr_drbg_random, &ctr_drbg)) != 0) {
+#else
   if ((ret = mbedtls_pk_sign(&key, MBEDTLS_MD_SHA256, sha256, 0, mbedtls_buf, &sig_size, mbedtls_ctr_drbg_random, &ctr_drbg)) != 0) {
+#endif
     DEBUG_ERROR(" failed\n  !  mbedtls_pk_sign returned -0x%04x", (unsigned int) -ret);
     goto exit;
   }

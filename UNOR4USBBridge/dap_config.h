@@ -5,8 +5,9 @@
 #define _DAP_CONFIG_H_
 
 /*- Includes ----------------------------------------------------------------*/
-#define CONFIG_BRIDGE_GPIO_BOOT     9
-#define CONFIG_BRIDGE_GPIO_RST      4
+/* BL616CL carrier wiring: RA4M1 MD = GPIO10, RA4M1 RESET = GPIO3. */
+#define CONFIG_BRIDGE_GPIO_BOOT     10
+#define CONFIG_BRIDGE_GPIO_RST      3
 
 /*- Definitions -------------------------------------------------------------*/
 #define DAP_CONFIG_DEFAULT_PORT        DAP_PORT_SWD
@@ -42,8 +43,9 @@ extern char usb_serial_number[16];
 
 #include "driver/gpio.h"
 
-#define CONFIG_BRIDGE_GPIO_SWDIO      8
-#define CONFIG_BRIDGE_GPIO_SWCLK      7
+/* BL616CL carrier wiring: RA4M1 SWDIO = GPIO9, SWCLK = GPIO8. */
+#define CONFIG_BRIDGE_GPIO_SWDIO      9
+#define CONFIG_BRIDGE_GPIO_SWCLK      8
 
 //-----------------------------------------------------------------------------
 static inline void DAP_CONFIG_SWCLK_TCK_write(int value)

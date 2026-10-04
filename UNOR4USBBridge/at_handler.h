@@ -22,8 +22,9 @@
 
 #define U8TOBCD(u) ((((u/10)%10)<<4)|(u%10))
 
-#define GPIO_BOOT   9
-#define GPIO_RST    4
+/* BL616CL carrier wiring: RA4M1 MD = GPIO10, RA4M1 RESET = GPIO3. */
+#define GPIO_BOOT   10
+#define GPIO_RST    3
 
 using namespace SudoMaker;
 
