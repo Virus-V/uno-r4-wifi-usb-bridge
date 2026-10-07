@@ -413,7 +413,6 @@ void CAtHandler::add_cmds_esp_generic() {
          auto ping_res = execute_ping(target.c_str(), atoi(ttl.c_str()), atoi(cnt.c_str()));
          char rsl[8];
          if (ping_res.status == ping_status::SUCCESS) {
-           /* BL616CL libc is built with CONFIG_LIBC_FLOAT=0: no %f. */
            sprintf(rsl,"%d", (int)ping_res.averagertt);
          } else {
            sprintf(rsl,"%d", ping_res.status);

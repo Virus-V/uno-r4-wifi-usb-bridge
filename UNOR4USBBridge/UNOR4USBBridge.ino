@@ -15,24 +15,18 @@
 #include "DAP.h"
 #include "Arduino_DebugUtils.h"
 
-//#define DEBUG_AT
-
 #define SERIAL_USER            USBSerial
-#define SERIAL_DEBUG           USBSerial
 #define SERIAL_USER_INTERNAL   Serial
-
-#ifdef DEBUG_AT
-#define SERIAL_AT              USBSerial
-#else
 #define SERIAL_AT              Serial1
-#endif
+#define SERIAL_DEBUG           USBSerial
 
 static void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
 
 static uint32_t _baud = 0;
-static CAtHandler atHandler(&SERIAL_AT);
+static volatile uint32_t _ra4ModeRequest = 0;
 USBCDC USBSerial(0);
+static CAtHandler atHandler(&SERIAL_AT);
 
 
 bool enableSTA(bool enable);
@@ -40,8 +34,7 @@ bool enableAP(bool enable);
 
 ssize_t write_fn(void* cookie, const char* buf, ssize_t size)
 {
-  /* redirect the bytes somewhere; writing to Serial just for an example */
-  USBSerial.write((uint8_t*) buf, size);
+  SERIAL_DEBUG.write((uint8_t*) buf, size);
   return size;
 }
 
@@ -135,11 +128,6 @@ void setup() {
   digitalWrite(GPIO_BOOT, HIGH);
   digitalWrite(GPIO_RST, HIGH);
 
-#ifdef DEBUG_AT
-  SERIAL_AT.begin(115200);
-  while (!SERIAL_AT);
-  SERIAL_AT.println("READY");
-#else
   USB.VID(0x2341);
   USB.PID(0x1002);
   USB.manufacturerName("Arduino");
@@ -154,25 +142,21 @@ void setup() {
   SERIAL_USER.setRxBufferSize(2048);
   SERIAL_USER_INTERNAL.setRxBufferSize(8192);
   SERIAL_USER_INTERNAL.setTxBufferSize(8192);
-#if defined(ARDUINO_ARCH_BL616CL)
-  /* UART0 pins come from the board variant (pins_arduino.h). */
+#ifdef CONFIG_BRIDGE_UART_VARIANT_PINS
   SERIAL_USER_INTERNAL.begin(115200);
 #else
   SERIAL_USER_INTERNAL.begin(115200, SERIAL_8N1, 44, 43);
 #endif
   SERIAL_AT.setRxBufferSize(8192);
   SERIAL_AT.setTxBufferSize(8192);
-#if defined(ARDUINO_ARCH_BL616CL)
-  /* UART1 pins come from the board variant (pins_arduino.h). */
+#ifdef CONFIG_BRIDGE_UART_VARIANT_PINS
   SERIAL_AT.begin(115200);
 #else
   SERIAL_AT.begin(115200, SERIAL_8N1, 6, 5);
 #endif
   USB.begin();
-#if defined(ARDUINO_ARCH_BL616CL)
-  /* USB init rebinds the UART0 console; re-open the RA4M1 bridge link. */
+#ifdef CONFIG_BRIDGE_UART_REOPEN_AFTER_USB
   SERIAL_USER_INTERNAL.begin(115200);
-#endif
 #endif
   /* Set up wifi event */
   WiFi.onEvent(CAtHandler::onWiFiEvent);
@@ -180,7 +164,7 @@ void setup() {
   /* Configure ntp */
   configTime(0, 0, "pool.ntp.org");
 
-  Debug.setDebugOutputStream(&USBSerial);
+  Debug.setDebugOutputStream(&SERIAL_DEBUG);
   Debug.setDebugLevel(DBG_ERROR);
 
   xTaskCreatePinnedToCore(
@@ -203,6 +187,26 @@ static uint8_t buf[2048];
 /* -------------------------------------------------------------------------- */
 void loop() {
 /* -------------------------------------------------------------------------- */
+
+  uint32_t ra4Mode = _ra4ModeRequest;
+  _ra4ModeRequest = 0;
+  if (ra4Mode == 1200 || ra4Mode == 2400) {
+    WiFi.disconnect();
+    digitalWrite(GPIO_BOOT, ra4Mode == 1200 ? HIGH : LOW);
+    if (ra4Mode == 2400) {
+      digitalWrite(GPIO_RST, HIGH);
+      delay(100);
+    }
+    digitalWrite(GPIO_RST, LOW);
+    delay(100);
+    digitalWrite(GPIO_RST, HIGH);
+    if (ra4Mode == 1200) {
+      delay(100);
+      digitalWrite(GPIO_RST, LOW);
+      delay(100);
+      digitalWrite(GPIO_RST, HIGH);
+    }
+  }
 
   if (SERIAL_USER.baudRate() != _baud) {
     _baud = SERIAL_USER.baudRate();
@@ -237,27 +241,11 @@ void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, 
     switch (event_id) {
       case ARDUINO_USB_CDC_LINE_CODING_EVENT:
         auto baud = data->line_coding.bit_rate;
-        if (baud == 1200) {
-          WiFi.disconnect();
-          digitalWrite(GPIO_BOOT, HIGH);
-          digitalWrite(GPIO_RST, LOW);
-          delay(100);
-          digitalWrite(GPIO_RST, HIGH);
-          delay(100);
-          digitalWrite(GPIO_RST, LOW);
-          delay(100);
-          digitalWrite(GPIO_RST, HIGH);
-        } else if (baud == 2400) {
-          WiFi.disconnect();
-          digitalWrite(GPIO_BOOT, LOW);
-          digitalWrite(GPIO_RST, HIGH);
-          delay(100);
-          digitalWrite(GPIO_RST, LOW);
-          delay(100);
-          digitalWrite(GPIO_RST, HIGH);
-        } else {
-          SERIAL_USER_INTERNAL.updateBaudRate(baud);
+        if (baud == 1200 || baud == 2400) {
+          _ra4ModeRequest = baud;
+          break;
         }
+        SERIAL_USER_INTERNAL.updateBaudRate(baud);
         while (SERIAL_USER_INTERNAL.available()) {
           SERIAL_USER_INTERNAL.read();
         }
@@ -267,5 +255,5 @@ void usbEventCallback(void* arg, esp_event_base_t event_base, int32_t event_id, 
 }
 
 extern "C" void mylogchar(char c) {
-    SERIAL_USER.print(c);
+    SERIAL_DEBUG.print(c);
 }

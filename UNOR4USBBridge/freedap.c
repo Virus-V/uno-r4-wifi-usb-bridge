@@ -407,6 +407,7 @@ static int dap_swd_operation(int req, uint32_t *data)
   else
   {
     dap_swj_run(dap_swd_turnaround + 32 + 1);
+    DAP_CONFIG_SWDIO_TMS_out();
   }
 
   DAP_CONFIG_SWDIO_TMS_write(1);

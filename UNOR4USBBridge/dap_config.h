@@ -5,9 +5,11 @@
 #define _DAP_CONFIG_H_
 
 /*- Includes ----------------------------------------------------------------*/
-/* BL616CL carrier wiring: RA4M1 MD = GPIO10, RA4M1 RESET = GPIO3. */
-#define CONFIG_BRIDGE_GPIO_BOOT     10
+#include "pins_arduino.h"
+
+#ifndef CONFIG_BRIDGE_GPIO_RST
 #define CONFIG_BRIDGE_GPIO_RST      3
+#endif
 
 /*- Definitions -------------------------------------------------------------*/
 #define DAP_CONFIG_DEFAULT_PORT        DAP_PORT_SWD
@@ -42,10 +44,26 @@ extern char usb_serial_number[16];
 /*- Implementations ---------------------------------------------------------*/
 
 #include "driver/gpio.h"
-
-/* BL616CL carrier wiring: RA4M1 SWDIO = GPIO9, SWCLK = GPIO8. */
+#ifndef CONFIG_BRIDGE_GPIO_SWDIO
 #define CONFIG_BRIDGE_GPIO_SWDIO      9
+#endif
+#ifndef CONFIG_BRIDGE_GPIO_SWCLK
 #define CONFIG_BRIDGE_GPIO_SWCLK      8
+#endif
+
+/* The target drives SWDIO during turnaround, ACK and read data. */
+static inline void DAP_CONFIG_SWDIO_TMS_in(void)
+{
+    gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_INPUT);
+}
+
+static inline void DAP_CONFIG_SWDIO_TMS_out(void)
+{
+#ifdef CONFIG_BRIDGE_SWD_DRIVE
+    gpio_set_level(CONFIG_BRIDGE_GPIO_SWDIO, true);
+#endif
+    gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_OUTPUT);
+}
 
 //-----------------------------------------------------------------------------
 static inline void DAP_CONFIG_SWCLK_TCK_write(int value)
@@ -148,26 +166,30 @@ static inline void DAP_CONFIG_SWCLK_TCK_clr(void)
 }
 
 //-----------------------------------------------------------------------------
-static inline void DAP_CONFIG_SWDIO_TMS_in(void)
-{
-    gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_INPUT);
-}
-
-//-----------------------------------------------------------------------------
-static inline void DAP_CONFIG_SWDIO_TMS_out(void)
-{
-    gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_OUTPUT);
-}
-
-//-----------------------------------------------------------------------------
 static inline void DAP_CONFIG_SETUP(void)
 {
+#ifdef CONFIG_BRIDGE_SWD_DRIVE
+    gpio_set_level(CONFIG_BRIDGE_GPIO_SWCLK, true);
+    gpio_config_t swclk = {};
+    swclk.pin_bit_mask = 1ULL << CONFIG_BRIDGE_GPIO_SWCLK;
+    swclk.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&swclk);
+    gpio_set_drive_capability(CONFIG_BRIDGE_GPIO_SWCLK, CONFIG_BRIDGE_SWD_DRIVE);
+
+    gpio_config_t swdio = {};
+    swdio.pin_bit_mask = 1ULL << CONFIG_BRIDGE_GPIO_SWDIO;
+    swdio.mode = GPIO_MODE_INPUT;
+    swdio.pull_up_en = 1;
+    gpio_config(&swdio);
+    gpio_set_drive_capability(CONFIG_BRIDGE_GPIO_SWDIO, CONFIG_BRIDGE_SWD_DRIVE);
+#else
     gpio_config_t io_conf = {};
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL << CONFIG_BRIDGE_GPIO_SWDIO) | (1ULL << CONFIG_BRIDGE_GPIO_SWCLK);
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
+#endif
 #ifdef DAP_CONFIG_ENABLE_JTAG
   HAL_GPIO_TDO_in();
   HAL_GPIO_TDI_in();
@@ -177,9 +199,13 @@ static inline void DAP_CONFIG_SETUP(void)
 //-----------------------------------------------------------------------------
 static inline void DAP_CONFIG_DISCONNECT(void)
 {
+#ifdef CONFIG_BRIDGE_SWD_DRIVE
+  DAP_CONFIG_SWDIO_TMS_in();
+#else
   gpio_set_direction(CONFIG_BRIDGE_GPIO_SWCLK, GPIO_MODE_INPUT);
   gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_INPUT);
   gpio_set_direction(CONFIG_BRIDGE_GPIO_RST, GPIO_MODE_INPUT);
+#endif
 #ifdef DAP_CONFIG_ENABLE_JTAG
   HAL_GPIO_TDO_in();
   HAL_GPIO_TDI_in();
@@ -189,14 +215,18 @@ static inline void DAP_CONFIG_DISCONNECT(void)
 //-----------------------------------------------------------------------------
 static inline void DAP_CONFIG_CONNECT_SWD(void)
 {
+#ifdef CONFIG_BRIDGE_SWD_DRIVE
+  DAP_CONFIG_SWDIO_TMS_out();
+  gpio_set_level(CONFIG_BRIDGE_GPIO_SWCLK, true);
+  gpio_set_level(CONFIG_BRIDGE_GPIO_RST, true);
+#else
   gpio_set_direction(CONFIG_BRIDGE_GPIO_SWDIO, GPIO_MODE_OUTPUT);
   gpio_set_level(CONFIG_BRIDGE_GPIO_SWDIO, true);
-
   gpio_set_direction(CONFIG_BRIDGE_GPIO_SWCLK, GPIO_MODE_OUTPUT);
   gpio_set_level(CONFIG_BRIDGE_GPIO_SWCLK, true);
-
   gpio_set_direction(CONFIG_BRIDGE_GPIO_RST, GPIO_MODE_OUTPUT);
   gpio_set_level(CONFIG_BRIDGE_GPIO_RST, true);
+#endif
 
 #ifdef DAP_CONFIG_ENABLE_JTAG
   HAL_GPIO_TDO_in();
