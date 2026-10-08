@@ -115,6 +115,12 @@ void atLoop(void* param) {
 void setup() {
 /* -------------------------------------------------------------------------- */
 
+  digitalWrite(GPIO_RST, LOW);
+  pinMode(GPIO_RST, OUTPUT);
+  pinMode(GPIO_BOOT, OUTPUT);
+  digitalWrite(GPIO_BOOT, HIGH);
+  uint32_t ra4m1ResetHoldStart = millis();
+
   /* redirect stdout */
   stdout = funopen(NULL, NULL, &write_fn, NULL, NULL);
   static char linebuf[256];
@@ -122,11 +128,6 @@ void setup() {
 
   /* redirect ets_printf / esp_rom_printf output */
   ets_install_putc1(&ets_putc_handler);
-
-  pinMode(GPIO_BOOT, OUTPUT);
-  pinMode(GPIO_RST, OUTPUT);
-  digitalWrite(GPIO_BOOT, HIGH);
-  digitalWrite(GPIO_RST, HIGH);
 
   USB.VID(0x2341);
   USB.PID(0x1002);
@@ -155,6 +156,7 @@ void setup() {
   SERIAL_AT.begin(115200, SERIAL_8N1, 6, 5);
 #endif
   USB.begin();
+  ra4m1ResetHoldStart = millis();
 #ifdef CONFIG_BRIDGE_UART_REOPEN_AFTER_USB
   SERIAL_USER_INTERNAL.begin(115200);
 #endif
@@ -175,6 +177,12 @@ void setup() {
       1,  /* Priority of the task */
       &atTask,  /* Task handle. */
       0); /* Core where the task should run */
+
+  uint32_t resetHoldElapsed = millis() - ra4m1ResetHoldStart;
+  if (resetHoldElapsed < 1000) {
+    delay(1000 - resetHoldElapsed);
+  }
+  digitalWrite(GPIO_RST, HIGH);
 
 }
 
